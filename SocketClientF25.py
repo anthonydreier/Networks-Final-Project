@@ -3,7 +3,8 @@
 
 import os
 import socket
-
+import time
+from tkinter import Tk, Button, Label, filedialog, messagebox
 
 # IP = "192.168.1.101" #"localhost"
 IP = "localhost"
@@ -12,6 +13,18 @@ ADDR = (IP,PORT)
 SIZE = 1024 ## byte .. buffer size
 FORMAT = "utf-8"
 SERVER_DATA_PATH = "server_data"
+
+class ClientGUI:
+    def __init__(self,root):
+        self.root = root
+        self.root.title("File Transer System")
+        self.root.geometry("400x200")
+
+        self.file_label = Label(root, text="No file recieved")
+        self.file_label.pack(pady=10)
+
+        self.recieve_button = Button(root, text="Recieve File", command=self.recieve_file(self))
+        self.recieve_button.pack(pady=5)
 
 def main():
     
