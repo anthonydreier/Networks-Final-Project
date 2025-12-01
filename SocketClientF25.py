@@ -1,10 +1,23 @@
-# Author : Ayesha S. Dina
-# Modified by: Denis Ulybyshev
-
 import os
 import socket
 import threading
 from tkinter import Tk, Button, Label, filedialog, messagebox
+import hashlib
+
+
+def compute_hash(data: bytes, algorithm: str = 'sha256') -> str:
+    """Compute and return the hex digest of `data` using `algorithm`.
+
+    - `data` must be bytes. For large files prefer incremental hashing.
+    - `algorithm` defaults to 'sha256' but any algorithm supported by hashlib is allowed.
+    """
+    try:
+        h = hashlib.new(algorithm)
+        h.update(data)
+        return h.hexdigest()
+    except Exception:
+        # Fallback: return empty string on error
+        return ""
 
 # IP = "192.168.1.101" #"localhost"
 IP = "localhost"
@@ -104,8 +117,10 @@ class ClientGUI:
             try:
                 with open(file_path, 'rb') as f:
                     data = f.read()
+                # Compute a hash of the file before sending
+                file_hash = compute_hash(data)
                 # Here you would normally send the data to the server
-                messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.")
+                messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.\nHash ({'sha256'}): {file_hash}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to upload file: {e}")
     
@@ -123,7 +138,9 @@ class ClientGUI:
                 if save_path:
                     with open(save_path, 'wb') as f:
                         f.write(file_data)
-                    messagebox.showinfo("Success", f"File '{filename}' downloaded successfully.")
+                    # Compute hash of downloaded data and show it
+                    downloaded_hash = compute_hash(file_data)
+                    messagebox.showinfo("Success", f"File '{filename}' downloaded successfully.\nHash ({'sha256'}): {downloaded_hash}")
             else:
                 messagebox.showerror("Error", "Failed to download file.")
         threading.Thread(target=task).start()
