@@ -27,24 +27,28 @@ SIZE = 1024 ## byte .. buffer size
 FORMAT = "utf-8"
 SERVER_DATA_PATH = "server_data"
 
-class ClientGUI:
-    def __init__(self,root):
-        self.root = root
-        self.root.title("File Transer System")
-        self.root.geometry("400x200")
+class FileClient:
+    def __init__(self,master):
+        self.sockect = None
+        self.client = None
+        self.remote_file_list = None
+        self.username = None
+        self.master = root
+        self.master.title("File Transfer System")
+        self.master.geometry("400x200")
 
         self.file_label = Label(root, text="No file recieved")
-        self.file_label.pack(pady=10)
+        self.file_label.grid(pady=10)
 
         # Buttons
-        self.download_button = Button(root, text="Download File", command=self.main(self))
-        self.download_button.pack(row=2,column=0,pady=5)
+        self.download_button = Button(root, text="Download File", command=self.download_file)
+        self.download_button.grid(row=2,column=0,pady=5)
 
         self.delete_button = Button(root, text="Delete File", command=self.delete_file)
-        self.delete_button.pack(row=2,column=1,pady=5)
+        self.delete_button.grid(row=2,column=1,pady=5)
 
         self.upload_button = Button(root, text="Upload File", command=self.upload_file)
-        self.upload_button.pack(row=2,column=2,pady=5)
+        self.upload_button.grid(row=2,column=2,pady=5)
 
     def login(self):
         self.username = simpledialog.askstring("Login", "Enter username:")
@@ -57,12 +61,12 @@ class ClientGUI:
     def main(self,sha_password): # Connect to the server
         # Decided to change main to accept sha_password directly and easier to change
     
-        client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        client.connect(ADDR)
-        connect_msg = f"CONNECT {self.username} {sha_password}"
-        client.send(connect_msg.encode(FORMAT))
-        response = client.recv(SIZE).decode(FORMAT)
-        if response == "AUTH_SUCCESS":
+        self.client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        self.client.connect(ADDR)
+        self.connect_msg = f"CONNECT {self.username} {sha_password}"
+        self.client.send(self.connect_msg.encode(FORMAT))
+        self.response = client.recv(SIZE).decode(FORMAT)
+        if self.response == "auth_success":
             messagebox.showinfo("Success", "Connected and authenticated successfully.")
         else:
             messagebox.showerror("Error", "Authentication failed.")
@@ -96,67 +100,93 @@ class ClientGUI:
         threading.Thread(target=task).start()
 
     def delete_file(self):
-        file_path = filedialog.askopenfilename(title="Select a file to delete")
-        if file_path:
-            try:
-                os.remove(file_path)
-                messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' deleted successfully.")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to delete file: {e}")
+        selected = self.remote_file_list.curselection()
+        if not selected:
+            messagebox.showerror("Info", "Please select a file.")
+            return
+        filename = self.remote_file_list.get(selected)
+        
         def task():
-            selected_file = self.remote_file_list.get()(self.remote_file_list.curselection())
-            if not selected_file:
-                messagebox.showwarning("Warning", "No file selected for deletion.")
-                return
-            response = self.send_command(f"DELETE {selected_file}")
-            if response == "DELETE_SUCCESS":
-                messagebox.showinfo("Success", f"File '{selected_file}' deleted successfully.")
-                self.recieve_file_list()
-            else:
-                messagebox.showerror("Error", "Failed to delete file.")
+            try:
+                self.send_command(f"DELETE {filename}")
+                response = self.sockect.recv(SIZE).decode(FORMAT)
+                if response == "success":
+                    self.file_label.config(text="File deleted.")
+                    self.recieve_file_list()
+                else:
+                    messagebox.showerror("Error", f"Communication error: {response}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Communication error: {e}")
+        threading.Thread(target=task).start()
     
     def upload_file(self):
         file_path = filedialog.askopenfilename(title="Select a file to upload")
-        if file_path:
-            try:
-                with open(file_path, 'rb') as f:
-                    data = f.read()
-                # Here you would normally send the data to the server
-                messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to upload file: {e}")
+        if not file_path:
+            return
+        filename = os.path.basename(file_path)
+        filesize = os.path.getsize(file_path)
+        
         def task():
-            response = self.send_command("UPLOAD")
-            if response == "READY":
-                with open(file_path, 'rb') as f:
-                    file_data = f.read()
-                self.client.sendall(file_data)
-                server_response = self.client.recv(SIZE).decode(FORMAT)
-                if server_response == "UPLOAD_SUCCESS":
-                    messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.")
+            try:
+                self.send_command(f"UPLOAD {filename} {filesize}")
+                response = self.send_command(f"LIST {filename}")
+                if response == "success":
+                    with open(file_path, 'rb') as f:
+                        sent = 0
+                        self.progress['value'] = 0
+                        while sent < filesize:
+                            chunk = f.read(SIZE)
+                            if not chunk:
+                                break
+                            self.sockect.sendall(chunk)
+                            sent += len(chunk)
+                            self.progress['value'] = (sent/filesize) * 100
+                            self.master.update()
+                    server_response = self.socket.recv(SIZE).decode(FORMAT)
+                    self.status_label.config(text=server_response)
                 else:
-                    messagebox.showerror("Error", "Failed to upload file.")
+                    messagebox.showerror("Error", f"Communication error: {response}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Communication error: {e}")
+        threading.Thread(target=task).start()
     
     def download_file(self):
-        selected_file = self.remote_file_list.get()(self.remote_file_list.curselection())
+        selected_file = self.remote_file_list.curselection()
         if not selected_file:
             messagebox.showwarning("Warning", "No file selected for download.")
             return
-        filename = self.remote_file_list.get(selected_file)
+        filename = self.remote_file_list.get(selected_file[0])
+        save_path = filedialog.asksaveasfilename(initialfile=filename)
+        if not save_path:
+            return
+
         def task():
-            response = self.send_command(f"DOWNLOAD {filename}")
-            if response and response.startswith("FILEDATA@"):
-                file_data = response.split("@", 1)[1].encode(FORMAT)
-                save_path = filedialog.asksaveasfilename(initialfile=filename, title="Save File As")
-                if save_path:
+            try:
+                self.send_command(f"DOWNLOAD {filename}")
+                response = self.socket.recv(SIZE).decode(FORMAT).decode(FORMAT)
+                if response == "success":
+                    filesize = int(response.split(" ")[1])
+                    self.socket.sendall(response.encode(FORMAT))
+
                     with open(save_path, 'wb') as f:
-                        f.write(file_data)
-                    messagebox.showinfo("Success", f"File '{filename}' downloaded successfully.")
-            else:
-                messagebox.showerror("Error", "Failed to download file.")
+                        received_size = 0
+                        self.progress['value'] = 0
+                        while received_size < filesize:
+                            chunk = self.socket.recv(min(SIZE, filesize - received_size))
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            received_size += len(chunk)
+                            self.progress['value'] = (received_size / filesize) * 100
+                            self.master.update()
+                    self.status_label.config(text=response)
+                else:
+                    messagebox.showerror("Error", f"Communication error: {response}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Communication error: {e}")
         threading.Thread(target=task).start()
 
 if __name__ == "__main__":
     root = Tk()
-    app = ClientGUI(root)
+    client = FileClient(root)
     root.mainloop()
