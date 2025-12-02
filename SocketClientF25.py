@@ -1,7 +1,7 @@
 import os
 import socket
 import threading
-from tkinter import Tk, Button, Label, filedialog, messagebox
+from tkinter import Tk, Button, Label, filedialog, messagebox, simpledialog
 import hashlib
 
 
@@ -20,7 +20,7 @@ def compute_hash(data: bytes, algorithm: str = 'sha256') -> str:
         return ""
 
 # IP = "192.168.1.101" #"localhost"
-IP = "localhost"
+IP = "129.213.84.251"
 PORT = 4450
 ADDR = (IP,PORT)
 SIZE = 1024 ## byte .. buffer size
@@ -46,35 +46,28 @@ class ClientGUI:
         self.upload_button = Button(root, text="Upload File", command=self.upload_file)
         self.upload_button.pack(row=2,column=2,pady=5)
 
-    def main():
+    def login(self):
+        self.username = simpledialog.askstring("Login", "Enter username:")
+        password = simpledialog.askstring("Login", "Enter password:", show='*')
+
+        sha_password = compute_hash(password.encode(FORMAT), 'sha256')
+
+        self.main(sha_password)
+
+    def main(self,sha_password): # Connect to the server
+        # Decided to change main to accept sha_password directly and easier to change
     
         client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         client.connect(ADDR)
-        client.send('hello world CNT 3004 \n'.encode())
-        # print('Client received:', client.recv(1024))
-        # client.send('q\n'.encode())
-        while True:  ### multiple communications
-            data = client.recv(SIZE).decode(FORMAT)
-            cmd, msg = data.split("@")
-            if cmd == "OK":
-                print(f"Receiving message from the server ... ")
-                print(f"{msg}")
-            elif cmd == "DISCONNECTED":
-                print(f"{msg}")
-                break
-        
-            data = input("> ") 
-            data = data.split(" ")
-            cmd = data[0]
-
-            if cmd == "TASK":
-                client.send(cmd.encode(FORMAT))
-                #type TASK command in the client, then try LOGOUT
-
-            elif cmd == "LOGOUT":
-                client.send(cmd.encode(FORMAT))
-                break
-
+        connect_msg = f"CONNECT {self.username} {sha_password}"
+        client.send(connect_msg.encode(FORMAT))
+        response = client.recv(SIZE).decode(FORMAT)
+        if response == "AUTH_SUCCESS":
+            messagebox.showinfo("Success", "Connected and authenticated successfully.")
+        else:
+            messagebox.showerror("Error", "Authentication failed.")
+            client.close()
+            return
 
         print("Disconnected from the server.")
         client.close() ## close the connection
@@ -117,10 +110,8 @@ class ClientGUI:
             try:
                 with open(file_path, 'rb') as f:
                     data = f.read()
-                # Compute a hash of the file before sending
-                file_hash = compute_hash(data)
                 # Here you would normally send the data to the server
-                messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.\nHash ({'sha256'}): {file_hash}")
+                messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to upload file: {e}")
     
@@ -138,9 +129,7 @@ class ClientGUI:
                 if save_path:
                     with open(save_path, 'wb') as f:
                         f.write(file_data)
-                    # Compute hash of downloaded data and show it
-                    downloaded_hash = compute_hash(file_data)
-                    messagebox.showinfo("Success", f"File '{filename}' downloaded successfully.\nHash ({'sha256'}): {downloaded_hash}")
+                    messagebox.showinfo("Success", f"File '{filename}' downloaded successfully.")
             else:
                 messagebox.showerror("Error", "Failed to download file.")
         threading.Thread(target=task).start()
