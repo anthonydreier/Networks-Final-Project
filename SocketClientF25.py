@@ -103,6 +103,17 @@ class ClientGUI:
                 messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' deleted successfully.")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete file: {e}")
+        def task():
+            selected_file = self.remote_file_list.get()(self.remote_file_list.curselection())
+            if not selected_file:
+                messagebox.showwarning("Warning", "No file selected for deletion.")
+                return
+            response = self.send_command(f"DELETE {selected_file}")
+            if response == "DELETE_SUCCESS":
+                messagebox.showinfo("Success", f"File '{selected_file}' deleted successfully.")
+                self.recieve_file_list()
+            else:
+                messagebox.showerror("Error", "Failed to delete file.")
     
     def upload_file(self):
         file_path = filedialog.askopenfilename(title="Select a file to upload")
@@ -114,6 +125,17 @@ class ClientGUI:
                 messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to upload file: {e}")
+        def task():
+            response = self.send_command("UPLOAD")
+            if response == "READY":
+                with open(file_path, 'rb') as f:
+                    file_data = f.read()
+                self.client.sendall(file_data)
+                server_response = self.client.recv(SIZE).decode(FORMAT)
+                if server_response == "UPLOAD_SUCCESS":
+                    messagebox.showinfo("Success", f"File '{os.path.basename(file_path)}' uploaded successfully.")
+                else:
+                    messagebox.showerror("Error", "Failed to upload file.")
     
     def download_file(self):
         selected_file = self.remote_file_list.get()(self.remote_file_list.curselection())
