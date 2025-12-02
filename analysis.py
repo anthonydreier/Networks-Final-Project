@@ -225,12 +225,10 @@ class NetworkAnalysisModule:
             f.write(f"System Uptime: {stats.get('system_uptime_seconds', 0):.2f} seconds\n\n\n")
             
             f.write("-- ACTION SUMMARY --\n")
-            f.write(f"Total Actions: {stats.get('total_actions', 0)}\n")
-            f.write(f"Successful: {stats.get('successful_actions', 0)}\n")
-            f.write(f"Failed: {stats.get('failed_actions', 0)}\n\n\n")
+            f.write(f"Total Actions: {stats.get('total_actions', 0)}\n\n\n")
             
+            f.write("-- UPLOAD SUMMARY --\n")
             if 'upload_stats' in stats:
-                f.write("-- UPLOAD SUMMARY --\n")
                 us = stats['upload_stats']
                 f.write(f"Number of Uploads: {us['count']}\n")
                 f.write(f"Average Upload Rate: {us['avg_rate_mbps']:.4f} MB/sec\n")
@@ -238,9 +236,11 @@ class NetworkAnalysisModule:
                 f.write(f"Minimum Upload Rate: {us['min_rate_mbps']:.4f} MB/sec\n")
                 f.write(f"Average Transfer Time: {us['avg_transfer_time']:.4f} seconds\n")
                 f.write(f"Total Data Uploaded: {us['total_data_mb']:.2f} MB\n\n\n")
+            else:
+                f.write("No uploads recorded.\n\n\n")
             
+            f.write("-- DOWNLOAD SUMMARY --\n")
             if 'download_stats' in stats:
-                f.write("-- DOWNLOAD SUMMARY --\n")
                 ds = stats['download_stats']
                 f.write(f"Number of Downloads: {ds['count']}\n")
                 f.write(f"Average Download Rate: {ds['avg_rate_mbps']:.4f} MB/sec\n")
@@ -248,14 +248,18 @@ class NetworkAnalysisModule:
                 f.write(f"Minimum Download Rate: {ds['min_rate_mbps']:.4f} MB/sec\n")
                 f.write(f"Average Transfer Time: {ds['avg_transfer_time']:.4f} seconds\n")
                 f.write(f"Total Data Downloaded: {ds['total_data_mb']:.2f} MB\n\n\n")
+            else:
+                f.write("No downloads recorded.\n\n\n")
             
+            f.write("-- AUTHENTICATION SUMMARY --\n")
             if 'authentication_stats' in stats:
-                f.write("-- AUTHENTICATION SUMMARY --\n")
                 aus = stats['authentication_stats']
                 f.write(f"Total Auth Attempts: {aus['total_attempts']}\n")
                 f.write(f"Successful: {aus['successful']}\n")
                 f.write(f"Failed: {aus['failed']}\n")
                 f.write(f"Average Response Time: {aus['avg_response_time']:.4f} seconds")
+            else:
+                f.write("No authentications recorded.\n\n\n")
         
         if self.verbose:
             print(f"[Analyzer] Report generated: {output_file}")
