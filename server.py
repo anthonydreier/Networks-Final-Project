@@ -78,7 +78,6 @@ def _allocate_server_filename(dir_abs: str, prefix: str, ext: str) -> str:
     width = max(3, len(str(n)))
     return f"{prefix}{n:0{width}d}{ext}"
 
-
 # UTILS ------------------------------------------>
 
 def ensure_data_dir():
@@ -240,9 +239,10 @@ def handle_upload(conn, parts, client_id):
         conn.sendall("ERROR@Usage: UPLOAD <path> <filesize_bytes>".encode(FORMAT))
         return
 
-    requested_rel = parts[1].strip().lstrip("/\\")
+    requested_rel = " ".join(parts[1:-1])
+    
     try:
-        filesize = int(parts[2])
+        filesize = int(parts[-1])
     except ValueError:
         conn.sendall("ERROR@filesize must be int".encode(FORMAT))
         return
@@ -319,7 +319,8 @@ def handle_download(conn, parts, client_id):
         conn.sendall("ERROR@Usage: DOWNLOAD <path>".encode(FORMAT))
         return
 
-    rel_path = parts[1]
+    rel_path = " ".join(parts[1:])
+
     try:
         target = safe_path(rel_path)
     except ValueError:
