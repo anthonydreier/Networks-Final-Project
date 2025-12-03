@@ -50,6 +50,8 @@ class FileClient:
         self.upload_button = Button(root, text="Upload File", command=self.upload_file)
         self.upload_button.grid(row=2,column=2,pady=5)
 
+        self.login()
+
     def login(self):
         self.username = simpledialog.askstring("Login", "Enter username:")
         password = simpledialog.askstring("Login", "Enter password:", show='*')
