@@ -22,7 +22,7 @@ class NetworkAnalysisModule:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         # Set reports directory and mkdir if it doesn't exist
-        self.report_folder = "Analysis Reports"
+        self.report_folder = "analysis_reports"
         if not os.path.exists(self.report_folder):
             os.makedirs(self.report_folder)
 
@@ -153,8 +153,6 @@ class NetworkAnalysisModule:
         
         stats = {
             'total_actions': len(df),
-            'successful_actions': len(df[df['status'] == 'success']),
-            'failed_actions': len(df[df['status'] == 'failure']),
             'system_uptime_seconds': round(time.time() - self.start_time, 2)
         }
         
