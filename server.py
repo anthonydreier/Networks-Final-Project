@@ -10,7 +10,7 @@ from analysis import NetworkAnalysisModule  # Aidan's module
 import re
 # CONFIG ------------------------------------------>
 
-HOST = "129.213.84.251" # bind all interfaces
+HOST = "0.0.0.0" # bind all interfaces
 PORT = 4450 # Change to whatever
 ADDR = (HOST, PORT)
 
