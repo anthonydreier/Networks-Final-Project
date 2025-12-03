@@ -1,7 +1,7 @@
 import os
 import socket
 import threading
-from tkinter import Tk, Button, Label, filedialog, messagebox, simpledialog
+from tkinter import END, Tk, Button, Label, filedialog, messagebox, simpledialog
 import hashlib
 
 
@@ -90,13 +90,17 @@ class FileClient:
 
     def recieve_file_list(self):
         def task():
-            response = self.send_command("TASK")
-            if response:
-                files = response.split(",")
-                self.remote_file_list.delete(0, 'end')
-                for file in files:
-                    self.remote_file_list.insert('end', file)
-                self.file_label.config(text="File list updated.")
+            self.send_command("TASK")
+            response = self.recieve_response()
+            if response.startswith("OK@"):
+                listing = response[3:]
+                files = listing.split(',') if listing else []
+                self.remote_files_list.delete(0, END)
+                for f in files:
+                    self.remote_files_list.insert(END, f)
+                self.status_label.config(text="Status: Directory listing updated")
+            else:
+                messagebox.showerror("Error", f"Failed to get directory listing: {response}")
         threading.Thread(target=task).start()
 
     def delete_file(self):
@@ -105,19 +109,23 @@ class FileClient:
             messagebox.showerror("Info", "Please select a file.")
             return
         filename = self.remote_file_list.get(selected)
+        file_path = os.path.join(SERVER_DATA_PATH, filename)
         
         def task():
             try:
-                self.send_command(f"DELETE {filename}")
+                self.send_command(f"DELETE {file_path}")
                 response = self.sockect.recv(SIZE).decode(FORMAT)
-                if response == "success":
+                if response == "OK@File deleted":
                     self.file_label.config(text="File deleted.")
                     self.recieve_file_list()
+                elif response.startswith("ERROR@"):
+                    messagebox.showerror("Delete Failed", response)
+                    self.file_label.config(text=f"Status: {response}")
                 else:
                     messagebox.showerror("Error", f"Communication error: {response}")
             except Exception as e:
                 messagebox.showerror("Error", f"Communication error: {e}")
-        threading.Thread(target=task).start()
+        threading.Thread(target=task, daemon=True).start()
     
     def upload_file(self):
         file_path = filedialog.askopenfilename(title="Select a file to upload")
@@ -128,9 +136,27 @@ class FileClient:
         
         def task():
             try:
-                self.send_command(f"UPLOAD {filename} {filesize}")
+                self.send_command(f"UPLOAD {file_path} {filesize}")
                 response = self.send_command(f"LIST {filename}")
-                if response == "success":
+                if response == "OK@Exists":
+                    #User confirms overwrite
+                    confirm = messagebox.askyesno("Confirm Upload", f"File '{filename}' exists on server. Overwrite?")
+                    self.send_command('y' if confirm else 'n')
+                    if not confirm:
+                        self.status_label.config(text="Status: Upload cancelled by user")
+                        messagebox.showinfo("Upload Cancelled", "Upload cancelled by user.")
+                        return
+                elif response.startswith("ERROR@File currently being processed"):
+                    messagebox.showerror("Error", response)
+                    self.status_label.config(text="Status: Upload cancelled - file locked")
+                    return
+                
+                # Expect READY@<size>
+                response = self.receive_response()
+                if response.startswith("READY@"):
+                    expected_size = int(response.split('@')[1])
+                    if expected_size != filesize:
+                        messagebox.showwarning("Warning", "File size mismatch with server.")
                     with open(file_path, 'rb') as f:
                         sent = 0
                         self.progress['value'] = 0
@@ -138,17 +164,24 @@ class FileClient:
                             chunk = f.read(SIZE)
                             if not chunk:
                                 break
-                            self.sockect.sendall(chunk)
+                            self.socket.sendall(chunk)
                             sent += len(chunk)
-                            self.progress['value'] = (sent/filesize) * 100
-                            self.master.update()
-                    server_response = self.socket.recv(SIZE).decode(FORMAT)
-                    self.status_label.config(text=server_response)
+                            self.progress['value'] = (sent / filesize) * 100
+                            self.master.update_idletasks()
+
+                    # Final status
+                    final_status = self.receive_response()
+                    if final_status.startswith("OK@"):
+                        self.status_label.config(text=f"Status: {final_status[3:]}")
+                        messagebox.showinfo("Upload Complete", final_status[3:])
+                    else:
+                        self.status_label.config(text=f"Status: {final_status}")
+                        messagebox.showerror("Upload Failed", final_status)
                 else:
-                    messagebox.showerror("Error", f"Communication error: {response}")
+                    messagebox.showerror("Error", f"Unexpected server response: {response}")
             except Exception as e:
                 messagebox.showerror("Error", f"Communication error: {e}")
-        threading.Thread(target=task).start()
+        threading.Thread(target=task, daemon=True).start()
     
     def download_file(self):
         selected_file = self.remote_file_list.curselection()
@@ -162,29 +195,36 @@ class FileClient:
 
         def task():
             try:
-                self.send_command(f"DOWNLOAD {filename}")
+                self.send_command(f"DOWNLOAD {save_path}")
                 response = self.socket.recv(SIZE).decode(FORMAT).decode(FORMAT)
-                if response == "success":
-                    filesize = int(response.split(" ")[1])
-                    self.socket.sendall(response.encode(FORMAT))
+                if response.startswith("ERROR@"):
+                    messagebox.showerror("Error", response)
+                    self.status_label.config(text=f"Status: {response}")
+                    return
+
+                if response.startswith("FILEINFO@"):
+                    filesize = int(response.split('@')[1])
+                    self.socket.send("READY".encode(FORMAT))
 
                     with open(save_path, 'wb') as f:
-                        received_size = 0
+                        received = 0
                         self.progress['value'] = 0
-                        while received_size < filesize:
-                            chunk = self.socket.recv(min(SIZE, filesize - received_size))
+                        while received < filesize:
+                            chunk = self.socket.recv(min(SIZE, filesize - received))
                             if not chunk:
                                 break
                             f.write(chunk)
-                            received_size += len(chunk)
-                            self.progress['value'] = (received_size / filesize) * 100
-                            self.master.update()
-                    self.status_label.config(text=response)
+                            received += len(chunk)
+                            self.progress['value'] = (received / filesize) * 100
+                            self.master.update_idletasks()
+                    
+                    self.status_label.config(text="Status: Download complete")
+                    messagebox.showinfo("Download Complete", "File downloaded successfully.")
                 else:
                     messagebox.showerror("Error", f"Communication error: {response}")
             except Exception as e:
                 messagebox.showerror("Error", f"Communication error: {e}")
-        threading.Thread(target=task).start()
+        threading.Thread(target=task, daemon=True).start()
 
 if __name__ == "__main__":
     root = Tk()
