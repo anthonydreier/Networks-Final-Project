@@ -7,6 +7,7 @@ import time
 
 from analysis import NetworkAnalysisModule  # Aidan's module
 
+import re
 # CONFIG ------------------------------------------>
 
 HOST = "129.213.84.251" # bind all interfaces
@@ -31,6 +32,51 @@ file_locks_lock = threading.Lock()
 
 # Analysis module imported that works on all client threads at once
 analyzer = NetworkAnalysisModule(source="server", verbose=True)
+
+
+# auto-naming function, jank but works kinda
+TEXT_EXTS = {
+    ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm",
+    ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".log"
+}
+
+AUDIO_EXTS = {
+    ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"
+}
+
+VIDEO_EXTS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v"
+}
+
+def _prefix_for_ext(ext: str) -> str:
+    ext = (ext or "").lower()
+    if ext in TEXT_EXTS:
+        return "TS"
+    if ext in AUDIO_EXTS:
+        return "AS"
+    if ext in VIDEO_EXTS:
+        return "VS"
+    return "FS"
+
+def _looks_like_server_name(filename: str) -> bool:
+    return re.match(r"^(TS|AS|VS|FS)\d{3,}(\.[^./\\]+)?$", filename, re.IGNORECASE) is not None
+
+def _allocate_server_filename(dir_abs: str, prefix: str, ext: str) -> str:
+    used = set()
+    try:
+        for name in os.listdir(dir_abs):
+            m = re.match(rf"^{re.escape(prefix)}(\d{{3,}})(\.[^./\\]+)?$", name, re.IGNORECASE)
+            if m:
+                used.add(int(m.group(1)))
+    except FileNotFoundError:
+        pass
+
+    n = 1
+    while n in used:
+        n += 1
+
+    width = max(3, len(str(n)))
+    return f"{prefix}{n:0{width}d}{ext}"
 
 
 # UTILS ------------------------------------------>
@@ -194,31 +240,50 @@ def handle_upload(conn, parts, client_id):
         conn.sendall("ERROR@Usage: UPLOAD <path> <filesize_bytes>".encode(FORMAT))
         return
 
-    rel_path = parts[1]
+    requested_rel = parts[1].strip().lstrip("/\\")
     try:
         filesize = int(parts[2])
     except ValueError:
         conn.sendall("ERROR@filesize must be int".encode(FORMAT))
         return
 
+    rel_dir = os.path.dirname(requested_rel).strip().lstrip("/\\")
+    requested_name = os.path.basename(requested_rel)
+    _, ext = os.path.splitext(requested_name)
+
     try:
-        target = safe_path(rel_path)
+        dir_abs = safe_path(rel_dir) if rel_dir else safe_path("")
+    except ValueError:
+        conn.sendall("ERROR@Invalid path".encode(FORMAT))
+        return
+
+    if _looks_like_server_name(requested_name):
+        stored_name = requested_name
+    else:
+        prefix = _prefix_for_ext(ext)
+        stored_name = _allocate_server_filename(dir_abs, prefix, ext)
+
+    stored_rel = os.path.join(rel_dir, stored_name) if rel_dir else stored_name
+
+    try:
+        target = safe_path(stored_rel)
     except ValueError:
         conn.sendall("ERROR@Invalid path".encode(FORMAT))
         return
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
 
-    # check overwrite
     if os.path.exists(target):
         conn.sendall("OK@EXISTS".encode(FORMAT))
         ans = conn.recv(SIZE).decode(FORMAT).strip().lower()
         if ans != "y":
             conn.sendall("ERROR@Upload cancelled".encode(FORMAT))
+            analyzer.record_action("upload", stored_rel, filesize, 0.0, client_id, "failure")
             return
 
     if not acquire_file_lock(target):
         conn.sendall("ERROR@File is currently being processed".encode(FORMAT))
+        analyzer.record_action("upload", stored_rel, filesize, 0.0, client_id, "failure")
         return
 
     conn.sendall(f"READY@{filesize}".encode(FORMAT))
@@ -242,15 +307,13 @@ def handle_upload(conn, parts, client_id):
     duration = time.time() - start
     release_file_lock(target)
 
-    analyzer.record_action("upload", rel_path, filesize, duration, client_id, status)
+    analyzer.record_action("upload", stored_rel, filesize, duration, client_id, status)
 
     if status == "success" and remaining == 0:
-        conn.sendall("OK@Upload complete".encode(FORMAT))
+        conn.sendall(f"OK@Upload complete: {stored_rel}".encode(FORMAT))
     else:
         conn.sendall("ERROR@Upload incomplete".encode(FORMAT))
 
-# EXPECTED USAGE: DOWNLOAD <remote_path>
-# Handles downloads from server
 def handle_download(conn, parts, client_id):
     if len(parts) < 2:
         conn.sendall("ERROR@Usage: DOWNLOAD <path>".encode(FORMAT))
