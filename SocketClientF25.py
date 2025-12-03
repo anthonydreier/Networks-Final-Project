@@ -49,6 +49,16 @@ class FileClient:
         self.upload_button = Button(root, text="Upload File", command=self.upload_file)
         self.upload_button.grid(row=2, column=2, pady=5)
 
+        # Directory / subfolder actions
+        self.dir_button = Button(root, text="List Dir", command=self.dir)
+        self.dir_button.grid(row=3, column=0, pady=5)
+
+        self.create_folder_button = Button(root, text="Create Folder", command=self.create_subfolder)
+        self.create_folder_button.grid(row=3, column=1, pady=5)
+
+        self.delete_folder_button = Button(root, text="Delete Folder", command=self.delete_subfolder)
+        self.delete_folder_button.grid(row=3, column=2, pady=5)
+
         self.login()
 
     def login(self):
@@ -125,21 +135,65 @@ class FileClient:
             self.client = None
             return b""
 
-    def recieve_file_list(self):
-        def task():
-            self.send_command("TASK")
-            response = self.recieve_response()
-            if response.startswith("OK@"):
-                listing = response[3:]
-                files = listing.split(',') if listing else []
-                self.remote_files_list.delete(0, END)
-                for f in files:
-                    self.remote_files_list.insert(END, f)
-                self.status_label.config(text="Status: Directory listing updated")
-            else:
-                messagebox.showerror("Error", f"Failed to get directory listing: {response}")
+    def dir(self, path: str = None):
+        """Request a directory listing from the server.
 
-        threading.Thread(target=task).start()
+        If `path` is None, prompts the user for a path (allow empty for root).
+        Expects server response in the form `OK@file1,file2,dir1,...` or `ERROR@...`.
+        """
+        if not self.client:
+            messagebox.showerror("Error", "Not connected to server.")
+            return
+        if path is None:
+            path = simpledialog.askstring("List Directory", "Enter path (leave empty for root):")
+            if path is None:
+                return
+            path = path.strip()
+
+        cmd = "DIR" if path == "" else f"DIR {path}"
+        response = self.send_command(cmd)
+        if response and response.startswith("OK@"):
+            listing = response[3:]
+            if not listing:
+                messagebox.showinfo("Directory Listing", "(empty)")
+            else:
+                # show one item per line
+                listing_text = "\n".join(listing.split(','))
+                messagebox.showinfo("Directory Listing", listing_text)
+        else:
+            messagebox.showerror("Error", f"Failed to get directory listing: {response}")
+
+    def create_subfolder(self):
+        """Prompt for a subfolder path and request the server to create it."""
+        if not self.client:
+            messagebox.showerror("Error", "Not connected to server.")
+            return
+        path = simpledialog.askstring("Create Subfolder", "Enter subfolder path to create (relative to server storage):")
+        if not path:
+            return
+        response = self.send_command(f"SUBFOLDER create {path}")
+        if response and response.startswith("OK@"):
+            messagebox.showinfo("Success", response[3:] or "Folder created")
+        else:
+            messagebox.showerror("Error", f"Create failed: {response}")
+
+    def delete_subfolder(self):
+        """Prompt for a subfolder path and request the server to delete it."""
+        if not self.client:
+            messagebox.showerror("Error", "Not connected to server.")
+            return
+        path = simpledialog.askstring("Delete Subfolder", "Enter subfolder path to delete (relative to server storage):")
+        if not path:
+            return
+        response = self.send_command(f"SUBFOLDER delete {path}")
+        if response and response.startswith("OK@"):
+            messagebox.showinfo("Success", response[3:] or "Folder deleted")
+        else:
+            messagebox.showerror("Error", f"Delete failed: {response}")
+
+    def recieve_file_list(self):
+        # Keep compatibility but delegate to `dir()` which shows a dialog with listing
+        self.dir()
 
     def delete_file(self):
         selected = self.remote_file_list.curselection()
@@ -156,7 +210,7 @@ class FileClient:
                 if response == "OK@File deleted":
                     self.file_label.config(text="File deleted.")
                     self.recieve_file_list()
-                elif response.startswith("ERROR@"):
+                elif response and response.startswith("ERROR@"):
                     messagebox.showerror("Delete Failed", response)
                     self.file_label.config(text=f"Status: {response}")
                 else:
