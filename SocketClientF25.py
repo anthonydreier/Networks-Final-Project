@@ -29,7 +29,6 @@ SERVER_DATA_PATH = "server_data"
 
 class FileClient:
     def __init__(self, master):
-        self.sockect = None
         self.client = None
         self.remote_file_list = None
         self.username = None
@@ -67,7 +66,7 @@ class FileClient:
         self.client.connect(ADDR)
         self.connect_msg = f"CONNECT {self.username} {sha_password}"
         self.client.send(self.connect_msg.encode(FORMAT))
-        self.response = self.client.recv(SIZE).decode(FORMAT)
+        self.response = self.receive_response()
         if self.response == "auth_success":
             messagebox.showinfo("Success", "Connected and authenticated successfully.")
         else:
@@ -75,8 +74,6 @@ class FileClient:
             self.client.close()
             return
 
-        print("Disconnected from the server.")
-        self.client.close()  ## close the connection
 
     def send_command(self, command):
         if not self.client:
@@ -84,11 +81,49 @@ class FileClient:
             return None
         try:
             self.client.send(command.encode(FORMAT))
-            response = self.client.recv(SIZE).decode(FORMAT)
-            return response
+            return self.receive_response()
         except Exception as e:
             messagebox.showerror("Error", f"Communication error: {e}")
             return None
+
+    def receive_response(self, size: int = SIZE) -> str:
+        """Safely receive a text response from `self.client` and return decoded string.
+
+        Returns empty string on error or if no data.
+        If a socket error occurs, `self.client` is cleared (set to None).
+        """
+        if not self.client:
+            return ""
+        try:
+            data = self.client.recv(size)
+            if not data:
+                return ""
+            return data.decode(FORMAT)
+        except Exception:
+            # Ensure we don't try to reuse a broken socket
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
+            return ""
+
+    def safe_recv_bytes(self, size: int) -> bytes:
+        """Safely receive raw bytes from `self.client`. Returns b'' on error."""
+        if not self.client:
+            return b""
+        try:
+            data = self.client.recv(size)
+            if not data:
+                return b""
+            return data
+        except Exception:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
+            return b""
 
     def recieve_file_list(self):
         def task():
@@ -117,7 +152,7 @@ class FileClient:
         def task():
             try:
                 self.send_command(f"DELETE {file_path}")
-                response = self.sockect.recv(SIZE).decode(FORMAT)
+                response = self.receive_response()
                 if response == "OK@File deleted":
                     self.file_label.config(text="File deleted.")
                     self.recieve_file_list()
@@ -168,7 +203,7 @@ class FileClient:
                             chunk = f.read(SIZE)
                             if not chunk:
                                 break
-                            self.socket.sendall(chunk)
+                            self.client.sendall(chunk)
                             sent += len(chunk)
                             self.progress['value'] = (sent / filesize) * 100
                             self.master.update_idletasks()
@@ -201,7 +236,7 @@ class FileClient:
         def task():
             try:
                 self.send_command(f"DOWNLOAD {save_path}")
-                response = self.socket.recv(SIZE).decode(FORMAT).decode(FORMAT)
+                response = self.receive_response()
                 if response.startswith("ERROR@"):
                     messagebox.showerror("Error", response)
                     self.status_label.config(text=f"Status: {response}")
@@ -209,13 +244,13 @@ class FileClient:
 
                 if response.startswith("FILEINFO@"):
                     filesize = int(response.split('@')[1])
-                    self.socket.send("READY".encode(FORMAT))
+                    self.client.send("READY".encode(FORMAT))
 
                     with open(save_path, 'wb') as f:
                         received = 0
                         self.progress['value'] = 0
                         while received < filesize:
-                            chunk = self.socket.recv(min(SIZE, filesize - received))
+                            chunk = self.safe_recv_bytes(min(SIZE, filesize - received))
                             if not chunk:
                                 break
                             f.write(chunk)
