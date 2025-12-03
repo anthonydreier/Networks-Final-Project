@@ -28,7 +28,7 @@ FORMAT = "utf-8"
 SERVER_DATA_PATH = "server_data"
 
 class FileClient:
-    def __init__(self,master):
+    def __init__(self, master):
         self.sockect = None
         self.client = None
         self.remote_file_list = None
@@ -42,13 +42,13 @@ class FileClient:
 
         # Buttons
         self.download_button = Button(root, text="Download File", command=self.download_file)
-        self.download_button.grid(row=2,column=0,pady=5)
+        self.download_button.grid(row=2, column=0, pady=5)
 
         self.delete_button = Button(root, text="Delete File", command=self.delete_file)
-        self.delete_button.grid(row=2,column=1,pady=5)
+        self.delete_button.grid(row=2, column=1, pady=5)
 
         self.upload_button = Button(root, text="Upload File", command=self.upload_file)
-        self.upload_button.grid(row=2,column=2,pady=5)
+        self.upload_button.grid(row=2, column=2, pady=5)
 
         self.login()
 
@@ -60,23 +60,23 @@ class FileClient:
 
         self.main(sha_password)
 
-    def main(self,sha_password): # Connect to the server
+    def main(self, sha_password):  # Connect to the server
         # Decided to change main to accept sha_password directly and easier to change
-    
-        self.client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect(ADDR)
         self.connect_msg = f"CONNECT {self.username} {sha_password}"
         self.client.send(self.connect_msg.encode(FORMAT))
-        self.response = client.recv(SIZE).decode(FORMAT)
+        self.response = self.client.recv(SIZE).decode(FORMAT)
         if self.response == "auth_success":
             messagebox.showinfo("Success", "Connected and authenticated successfully.")
         else:
             messagebox.showerror("Error", "Authentication failed.")
-            client.close()
+            self.client.close()
             return
 
         print("Disconnected from the server.")
-        client.close() ## close the connection
+        self.client.close()  ## close the connection
 
     def send_command(self, command):
         if not self.client:
@@ -103,6 +103,7 @@ class FileClient:
                 self.status_label.config(text="Status: Directory listing updated")
             else:
                 messagebox.showerror("Error", f"Failed to get directory listing: {response}")
+
         threading.Thread(target=task).start()
 
     def delete_file(self):
@@ -112,7 +113,7 @@ class FileClient:
             return
         filename = self.remote_file_list.get(selected)
         file_path = os.path.join(SERVER_DATA_PATH, filename)
-        
+
         def task():
             try:
                 self.send_command(f"DELETE {file_path}")
@@ -127,21 +128,22 @@ class FileClient:
                     messagebox.showerror("Error", f"Communication error: {response}")
             except Exception as e:
                 messagebox.showerror("Error", f"Communication error: {e}")
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def upload_file(self):
         file_path = filedialog.askopenfilename(title="Select a file to upload")
         if not file_path:
             return
         filename = os.path.basename(file_path)
         filesize = os.path.getsize(file_path)
-        
+
         def task():
             try:
                 self.send_command(f"UPLOAD {file_path} {filesize}")
                 response = self.send_command(f"LIST {filename}")
                 if response == "OK@Exists":
-                    #User confirms overwrite
+                    # User confirms overwrite
                     confirm = messagebox.askyesno("Confirm Upload", f"File '{filename}' exists on server. Overwrite?")
                     self.send_command('y' if confirm else 'n')
                     if not confirm:
@@ -152,7 +154,7 @@ class FileClient:
                     messagebox.showerror("Error", response)
                     self.status_label.config(text="Status: Upload cancelled - file locked")
                     return
-                
+
                 # Expect READY@<size>
                 response = self.receive_response()
                 if response.startswith("READY@"):
@@ -183,8 +185,9 @@ class FileClient:
                     messagebox.showerror("Error", f"Unexpected server response: {response}")
             except Exception as e:
                 messagebox.showerror("Error", f"Communication error: {e}")
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def download_file(self):
         selected_file = self.remote_file_list.curselection()
         if not selected_file:
@@ -219,13 +222,14 @@ class FileClient:
                             received += len(chunk)
                             self.progress['value'] = (received / filesize) * 100
                             self.master.update_idletasks()
-                    
+
                     self.status_label.config(text="Status: Download complete")
                     messagebox.showinfo("Download Complete", "File downloaded successfully.")
                 else:
                     messagebox.showerror("Error", f"Communication error: {response}")
             except Exception as e:
                 messagebox.showerror("Error", f"Communication error: {e}")
+
         threading.Thread(target=task, daemon=True).start()
 
 if __name__ == "__main__":
